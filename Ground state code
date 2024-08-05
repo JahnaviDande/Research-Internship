@@ -1,0 +1,71 @@
+#GROUND STATE WAVEFUNCTION
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+from scipy.fft import fft, ifft, fftfreq
+
+mass = 1
+hbar = 1
+omega = 1
+
+def second_derivative(psi: np.ndarray, position: np.ndarray) -> np.ndarray:
+    d = position[1] - position[0]
+    fft_wavefunc = fft(psi)
+    fft_freq = fftfreq(len(position), d)*2*np.pi
+    second_derivative_array = -fft_wavefunc * fft_freq**2
+    final_array = ifft(second_derivative_array)
+    return final_array
+
+def potential(position:np.ndarray)->np.ndarray:
+    global omega, mass
+    return 0.5 * mass * omega**2 * position**2
+
+def hamiltonian(psi:np.ndarray, position:np.ndarray)->np.ndarray:
+    global mass, hbar
+    pot_en = potential(position)
+    final_ham = (-0.5 * hbar**2 * second_derivative(psi, position) / mass + pot_en * psi)
+    return final_ham
+
+def model(t, y:np.ndarray, position:np.ndarray, potential:np.ndarray)->np.ndarray:
+    global hbar
+    print(t)
+    y = y / np.sqrt(np.sum(y * np.conjugate(y))*(position[1] - position[0]))  # Renormalization
+    ip = -hamiltonian(y, position) / hbar
+    return ip
+
+if __name__ == "__main__":
+    position = np.linspace(-6, 6, 256, endpoint=False)
+    psi_at_0 = np.zeros(np.shape(position)[0]) + 1
+    psi_at_0 /= np.sqrt(np.sum(np.abs(psi_at_0)**2) * (position[1] - position[0]))
+
+    y0 = psi_at_0  # Initial condition remains complex
+    time = np.linspace(0, 1, 15, endpoint=False)
+    potential_energy = potential(position).astype("complex")
+
+    res = solve_ivp(model, t_span=(0, 1), y0=y0, t_eval=time, args=(position, potential_energy), rtol=1e-3, atol=1e-4, method="RK45")
+
+    final_wavefunction = res.y[:, -1]
+    norm_factor = np.sqrt(np.sum(final_wavefunction*final_wavefunction) * (position[1] - position[0]))
+    final_wavefunction = final_wavefunction / norm_factor
+
+    fig, ax1 = plt.subplots()
+    plt.plot(position, (1/np.pi)**(1/4)*np.exp(-position**2/2), linestyle="dashed", color = "red", linewidth = 2)
+    ax1.plot(position, final_wavefunction, color='blue', label='Wavefunction')
+
+    color = 'tab:blue'
+    ax1.set_xlabel('Position')
+    ax1.set_ylabel('|ψ|^2', color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+
+    ax2 = ax1.twinx()  # Instantiate a second axes that shares the same x-axis
+
+    color = 'tab:red'
+    ax2.set_ylabel('V(x)', color=color)  # We already handled the x-label with ax1
+    ax2.plot(position, potential(position), color=color, label="Potential")
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    fig.tight_layout()  # Otherwise the right y-label is slightly clipped
+    fig.legend(loc="upper right")
+    plt.title('Wavefunction and Potential')
+    plt.show()
