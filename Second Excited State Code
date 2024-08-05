@@ -1,0 +1,91 @@
+#SECOND EXCITED STATE CODE
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+from scipy.fft import fft, ifft, fftfreq
+
+# Load the ground state wavefunction
+ground_state_wavefunction = np.loadtxt('final_wavefunction_1.txt')
+
+# Constants
+mass = 1
+hbar = 1
+omega = 1
+
+def second_derivative(psi: np.ndarray, position: np.ndarray) -> np.ndarray:
+    d = position[1] - position[0]
+    fft_wavefunc = fft(psi)
+    fft_freq = fftfreq(len(position), d) * 2 * np.pi
+    second_derivative_array = -fft_wavefunc * fft_freq**2
+    final_array = ifft(second_derivative_array)
+    return final_array
+
+def potential(position: np.ndarray) -> np.ndarray:
+    global omega, mass
+    return 0.5 * mass * omega**2 * position**2
+
+def hamiltonian(psi: np.ndarray, position: np.ndarray) -> np.ndarray:
+    global mass, hbar
+    pot_en = potential(position)
+    final_ham = (-0.5 * hbar**2 * second_derivative(psi, position) / mass + pot_en * psi)
+    return final_ham
+
+def model(t, y: np.ndarray, position: np.ndarray, potential: np.ndarray) -> np.ndarray:
+    global hbar
+    print(t)
+    y = y / np.sqrt(np.sum(y * np.conjugate(y)) * (position[1] - position[0]))  # Renormalization
+    ip = -hamiltonian(y, position) / hbar
+    return ip
+
+def normalize(psi, position):
+    norm_factor = np.sqrt(np.sum(np.abs(psi)**2) * (position[1] - position[0]))
+    return psi / norm_factor
+
+if __name__ == "__main__":
+    position = np.linspace(-6, 6, 512, endpoint=False)  # Increased resolution
+    psi_at_0 = np.zeros(np.shape(position)[0]) + 1  # for 2nd excited state
+    
+    # Orthogonalize against ground state
+    inner_product = (np.sum(np.conjugate(ground_state_wavefunction) * psi_at_0) * (position[1] - position[0]))
+    psi_at_0 = psi_at_0 - (inner_product * ground_state_wavefunction)
+    psi_at_0 = normalize(psi_at_0, position)
+
+    y0 = psi_at_0  
+    time = np.linspace(0, 0.253993, 11, endpoint=False)
+    potential_energy = potential(position).astype("complex")
+
+    res = solve_ivp(model, t_span=(0, 0.253993), y0=y0, t_eval=time, args=(position, potential_energy), rtol=1e-4, atol=1e-4, method="RK45")
+
+    final_wavefunction = res.y[:, -1]
+    final_wavefunction = normalize(final_wavefunction, position)
+
+    # Analytical solution for comparison
+    analytical_psi = np.sqrt(8/3) * (position**2 - 0.5) * (1/np.pi)**(1/4) * np.exp(-position**2/2)
+    analytical_psi = normalize(analytical_psi, position)
+
+    # Plotting
+    fig, ax1 = plt.subplots()
+    ax1.plot(position, analytical_psi, linestyle="dashed", color="red", linewidth=2, label='Analytical Wavefunction')
+    ax1.plot(position, np.real(final_wavefunction), color='blue', label='Numerical Wavefunction')
+    
+
+    color = 'tab:blue'
+    ax1.set_xlabel('Position')
+    ax1.set_ylabel('|ψ|^2', color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+
+    ax2 = ax1.twinx()
+    color = 'tab:red'
+    ax2.set_ylabel('V(x)', color=color)
+    ax2.plot(position, potential(position), color=color, label="Potential")
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    fig.tight_layout()
+    plt.title('Wavefunction and Potential')
+    fig.legend(loc="upper right")
+    plt.show()
+
+    # Check overlap (inner product)
+    #overlap = np.sum(np.conjugate(analytical_psi) * final_wavefunction) * (position[1] - position[0])
+    #print(f"Overlap: {overlap}")
